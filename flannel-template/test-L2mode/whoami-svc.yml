@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: whoami
+  name: whoami
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: whoami
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: whoami
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: lima-metallb1
+      containers:
+      - image: traefik/whoami
+        imagePullPolicy: IfNotPresent
+        name: whoami
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+   labels:
+     app: whoamisvc
+   name: whoamisvc
+   namespace: default
+spec:
+   ports:
+     - name: whoamisvc
+       protocol: TCP
+       port: 80
+       targetPort: 80
+   selector:
+     app: whoami
+   type: LoadBalancer

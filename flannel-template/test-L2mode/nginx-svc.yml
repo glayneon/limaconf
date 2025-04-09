@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: metalapp
+  name: metalapp
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metalapp
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: metalapp
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: lima-metallb1
+      containers:
+      - image: docker.io/library/nginx:alpine
+        imagePullPolicy: IfNotPresent
+        name: nginx
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+   labels:
+     app: metalsvc
+   name: metalsvc
+   namespace: default
+spec:
+   ports:
+     - name: metaltest
+       protocol: TCP
+       port: 80
+       targetPort: 80
+   selector:
+     app: metalapp
+   type: LoadBalancer

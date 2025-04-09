@@ -53,6 +53,9 @@ provision:
     sysctl --system
     # Installing kubeadm, kubelet and kubectl
     export DEBIAN_FRONTEND=noninteractive
+    # Change the apt source to the local mirror
+    sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirror.kakao.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
+    sed -i 's|http://security.ubuntu.com/ubuntu|http://mirror.kakao.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
     apt-get update
     apt-get install -y apt-transport-https ca-certificates curl
     VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt | sed -e 's/v//' | cut -d'.' -f1-2)
@@ -196,4 +199,6 @@ message: |
   ------
 cpus: 4
 arch: x86_64
-disk: 50GiB
+disk: 30GiB
+networks:
+  - lima: user-v2

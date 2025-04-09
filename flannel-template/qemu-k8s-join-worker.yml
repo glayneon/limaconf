@@ -102,7 +102,7 @@ provision:
     kubeadm config images list
     kubeadm config images pull --cri-socket=unix:///run/containerd/containerd.sock
     # Joining your node to another cluster as a worker node
-    kubeadm join 192.168.104.4:6443 --token tyxjun.9tobfeon1544ylgh --discovery-token-ca-cert-hash sha256:62ce46a1ed4409987c18591c231aad9fd6c06ca680c259462791c8ebe1810847
+    kubeadm join 192.168.104.9:6443 --token h1qtyw.xxxxx --discovery-token-ca-cert-hash sha256:dcef4e08257b7d24dfe8ba95b4da64f26ce07326exxxxxxx
     # sed -e "/server:/ s|https://.*:\([0-9]*\)$|https://127.0.0.1:\1|" -i $KUBECONFIG
     # mkdir -p ${HOME:-/root}/.kube && cp -f $KUBECONFIG ${HOME:-/root}/.kube/config
 - mode: system
@@ -170,3 +170,5 @@ message: |
 cpus: 4
 arch: x86_64
 disk: 30GiB
+networks:
+  - lima: user-v2
