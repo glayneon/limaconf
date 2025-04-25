@@ -1,26 +1,10 @@
-# Deploy kubernetes via kubeadm.
-# $ limactl start ./k8s.yaml
-# $ limactl shell k8s kubectl
-
-# It can be accessed from the host by exporting the kubeconfig file;
-# the ports are already forwarded automatically by lima:
-#
-# $ export KUBECONFIG=$(limactl list k8s --format 'unix://{{.Dir}}/copied-from-guest/kubeconfig.yaml')
-# $ kubectl get no
-# NAME       STATUS   ROLES                  AGE   VERSION
-# lima-k8s   Ready    control-plane,master   44s   v1.22.3
-
-# This template requires Lima v0.20.0 or later.
 images:
-# Try to use release-yyyyMMdd image if available. Note that release-yyyyMMdd will be removed after several months.
 - location: "https://cloud-images.ubuntu.com/releases/24.04/release-20250115/ubuntu-24.04-server-cloudimg-amd64.img"
   arch: "x86_64"
   digest: "sha256:28d2f9df3ac0d24440eaf6998507df3405142cf94a55e1f90802c78e43d2d9df"
 - location: "https://cloud-images.ubuntu.com/releases/24.04/release-20250115/ubuntu-24.04-server-cloudimg-arm64.img"
   arch: "aarch64"
   digest: "sha256:f11282a728ad42f8bfe0b646a6807674d79a019bfc229d80032345dd3228a2db"
-# Fallback to the latest release image.
-# Hint: run `limactl prune` to invalidate the cache
 - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
   arch: "x86_64"
 - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
@@ -45,16 +29,22 @@ provision:
     EOF
     modprobe overlay
     modprobe br_netfilter
+    # Add kernel subsystem changes to support many pods in running kubeflow
     cat <<EOF | sudo tee /etc/sysctl.d/99-kubernetes-cri.conf
     net.bridge.bridge-nf-call-iptables  = 1
     net.ipv4.ip_forward                 = 1
     net.bridge.bridge-nf-call-ip6tables = 1
+    fs.inotify.max_user_instances       = 2280
+    fs.inotify.max_user_watches         = 1255360
     EOF
     sysctl --system
     # Installing kubeadm, kubelet and kubectl
     export DEBIAN_FRONTEND=noninteractive
+    # Change the apt source to the local mirror
+    sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirror.kakao.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
+    sed -i 's|http://security.ubuntu.com/ubuntu|http://mirror.kakao.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
     apt-get update
-    apt-get install -y apt-transport-https ca-certificates curl
+    apt-get install -y apt-transport-https ca-certificates curl open-iscsi
     VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt | sed -e 's/v//' | cut -d'.' -f1-2)
     echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${VERSION}/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list
     curl -fsSL https://pkgs.k8s.io/core:/stable:/v${VERSION}/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
@@ -90,18 +80,21 @@ provision:
                   SystemdCgroup = true
     EOF
     systemctl restart containerd
+    systemctl restart containerd
 # See <https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/>
 - mode: system
   script: |
     #!/bin/bash
     set -eux -o pipefail
     test -e /etc/kubernetes/admin.conf && exit 0
+    IPADDR=$(ip -4 a show lima0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
     export KUBECONFIG=/etc/kubernetes/admin.conf
     systemctl stop kubelet
     kubeadm config images list
     kubeadm config images pull --cri-socket=unix:///run/containerd/containerd.sock
     systemctl start kubelet
     # Initializing your control-plane node
+    # Change IP address properly for serving Kubernetes API server
     cat <<EOF >kubeadm-config.yaml
     kind: InitConfiguration
     apiVersion: kubeadm.k8s.io/v1beta4
@@ -111,21 +104,32 @@ provision:
     kind: ClusterConfiguration
     apiVersion: kubeadm.k8s.io/v1beta4
     apiServer:
-      certSANs: # --apiserver-cert-extra-sans
+      certSANs:
       - "127.0.0.1"
+      - "${IPADDR}"
+      extraArgs:
+      - name: "service-account-issuer"
+        value: "https://kubernetes.default.svc"
+      - name: "service-account-signing-key-file"
+        value: "/etc/kubernetes/pki/sa.key"
     networking:
-      podSubnet: "10.244.0.0/16" # --pod-network-cidr
+      dnsDomain: cluster.local
+      podSubnet: "10.244.0.0/16"
+      serviceSubnet: 10.96.0.0/12
     ---
     kind: KubeletConfiguration
     apiVersion: kubelet.config.k8s.io/v1beta1
     cgroupDriver: systemd
     EOF
-    kubeadm init --config kubeadm-config.yaml
-    # Installing a Pod network add-on, Calico
-    kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.3/manifests/tigera-operator.yaml
-    kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.3/manifests/custom-resources.yaml
+    # Skip kube-proxy
+    kubeadm init --config kubeadm-config.yaml --skip-phases=addon/kube-proxy
+    # kubeadm init --config kubeadm-config.yaml
     # Control plane node isolation
     kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+    # Installing a Pod network add-on, Calico
+    # kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.3/manifests/calico.yaml
+    # install MetalLB
+    # kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
     # Replace the server address with localhost, so that it works also from the host
     sed -e "/server:/ s|https://.*:\([0-9]*\)$|https://127.0.0.1:\1|" -i $KUBECONFIG
     mkdir -p ${HOME:-/root}/.kube && cp -f $KUBECONFIG ${HOME:-/root}/.kube/config
@@ -137,8 +141,23 @@ provision:
     mkdir -p {{.Home}}/.kube
     cp -f $KUBECONFIG {{.Home}}/.kube/config
     chown -R {{.User}} {{.Home}}/.kube
-    # install k9s
+    cat <<EOF >> {{.Home}}/.bashrc
+    alias k="kubectl"
+    EOF
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    # install k9s and kustomize
     curl -sSL -O https://github.com/derailed/k9s/releases/download/v0.40.10/k9s_linux_amd64.deb && sudo dpkg -i ./k9s*.deb
+    curl -sSL -O https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.6.0/kustomize_v5.6.0_linux_amd64.tar.gz && tar xvfz ./kustomize_*_amd64.tar.gz && sudo mv ./kustomize /usr/local/bin/kustomize
+    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    # install ovn-k8s
+    git clone https://github.com/ovn-org/ovn-kubernetes.git
+    cd ovn-kubernetes/helm/ovn-kubernetes
+    git checkout v1.0.0
+    helm install ovn-kubernetes . -f values.yaml \
+     --set k8sAPIServer="https://127.0.1:6443"
 probes:
 - description: "kubeadm to be installed"
   script: |
@@ -176,6 +195,15 @@ probes:
       echo >&2 "kubernetes cluster is not up and running yet"
       exit 1
     fi
+- description: "OVN-k8s deployment to be running"
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    if ! timeout 180s bash -c "until kubectl wait -n kube-system --timeout=3s --for=condition=available deploy calico-kube-controllers 2>&1; do sleep 3; done"; then
+      echo >&2 "Restarting containerd"
+      systemctl restart containerd
+      kubectl wait -n kube-system --timeout=60s --for=condition=available deploy calico-kube-controllers
+    fi
 - description: "coredns deployment to be running"
   script: |
     #!/bin/bash
@@ -191,6 +219,17 @@ message: |
   export KUBECONFIG="{{.Dir}}/copied-from-guest/kubeconfig.yaml"
   kubectl ...
   ------
-cpus: 4
+# test-vm
+cpus: 6
 arch: x86_64
+memory: 8GiB
 disk: 50GiB
+networks:
+  - lima: shared
+# kubeflow
+# cpus: 10
+# memory: 18GiB
+# arch: x86_64
+# disk: 100GiB
+# networks:
+#   - lima: shared

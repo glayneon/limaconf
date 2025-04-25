@@ -1,0 +1,231 @@
+❯ limactl list
+NAME         STATUS   SSH              VMTYPE    ARCH       CPUS    MEMORY  DISK 
+metallb1     Running  127.0.0.1:55168  qemu      x86_64     4       4GiB      30GiB
+metallb2     Running  127.0.0.1:56818  qemu      x86_64     4       4GiB      30GiB
+metallb3     Running  127.0.0.1:56975  qemu      x86_64     4       4GiB      30GiB
+netns-test1  Running  127.0.0.1:50490  qemu      x86_64     2       4GiB      30GiB
+
+
+
+
+❯ limactl shell metallb1 kubectl get nodes -owide
+NAME       STATUS   ROLES           AGE   VERSION   INTERNAL-IP      EXTERNAL-IP
+metallb1   Ready    control-plane   39m   v1.32.3   192.168.104.9    <none>     
+metallb2   Ready    <none>          29m   v1.32.3   192.168.104.10   <none>     
+metallb3   Ready    <none>          18m   v1.32.3   192.168.104.11   <none>     
+
+
+
+# iptables rule 확인 (metallb1-control-plane)
+PREROUTING --> KUBE-SERVICES --> 10.172.141.152 (ClusterIP) --> KUBE-SVC-W5XJXGSM77XFBTGV --> Pod Network 밖에서 온 패킷인 경우 --> MASQ --> KUBE-SEP-3VB2MMOYLWW3KFGF --> 
+                             --> 192.168.104.200 (LB IP) --> KUBE-EXT-W5XJXGSM77XFBTGV --> MASQ --> KUBE-SVC-W5XJXGSM77XFBTGV
+
+
+# iptables rule 확인 (metallb2-worker)
+PREROUTING --> KUBE-SERVICES --> 10.172.141.152 (ClusterIP) --> KUBE-SVC-W5XJXGSM77XFBTGV --> Pod Network 밖에서 온 패킷인 경우 --> MASQ --> KUBE-SEP-3VB2MMOYLWW3KFGF --> 
+                             --> 192.168.104.200 (LB IP) --> KUBE-EXT-W5XJXGSM77XFBTGV --> MASQ --> KUBE-SVC-W5XJXGSM77XFBTGV
+
+# iptables rule 확인 (metallb3-worker)
+PREROUTING --> KUBE-SERVICES --> 10.172.141.152 (ClusterIP) --> KUBE-SVC-W5XJXGSM77XFBTGV --> Pod Network 밖에서 온 패킷인 경우 --> MASQ --> KUBE-SEP-3VB2MMOYLWW3KFGF --> 
+                             --> 192.168.104.200 (LB IP) --> KUBE-EXT-W5XJXGSM77XFBTGV --> MASQ --> KUBE-SVC-W5XJXGSM77XFBTGV
+
+
+{"caller":"service_controller.go:64","controller":"ServiceReconciler","level":"info","start reconcile":"default/whoamisvc","ts":"2025-04-07T05:56:29Z"}
+{"caller":"main.go:420","event":"serviceAnnounced","ips":["192.168.104.201"],"level":"info","msg":"service has IP, announcing","pool":"vip-pool","protocol":"layer2","ts":"2025-04-07T05:56:29Z"}
+{"caller":"layer2_status_controller.go:68","controller":"Layer2StatusReconciler","level":"info","start reconcile":"default/whoamisvc","ts":"2025-04-07T05:56:29Z"}
+
+
+Events:                                                                                                                                             │
+│   Type    Reason        Age              From             Message                                                                                   │
+│   ----    ------        ----             ----             -------                                                                                   │
+│   Normal  nodeAssigned  76s              metallb-speaker  announcing from node "lima-metallb2" with protocol "layer2"                               │
+│   Normal  nodeAssigned  8s (x2 over 8s)  metallb-speaker  announcing from node "lima-metallb3" with protocol "layer2"
+
+
+
+
+{"level":"error","ts":"2025-04-07T06:55:17Z","msg":"Reconciler error","controller":"servicel2status","namespace":"default","name":"metalsvc","reconcileID":"8b3fc986-2d64-422e-878b-192580dd9b50","error":"ServiceL2Status.metallb.io \"l2-kqljt\" is invalid: status.node: Invalid value: \"string\": Value is immutable","stacktrace":"sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).reconcileHandler\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:316\nsigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).processNextWorkItem\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:263\nsigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).Start.func2.2\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:224"}
+{"caller":"layer2_status_controller.go:68","controller":"Layer2StatusReconciler","level":"info","start reconcile":"default/whoamisvc","ts":"2025-04-07T06:55:17Z"}
+{"caller":"layer2_status_controller.go:130","controller":"Layer2StatusReconciler","end reconcile":"default/whoamisvc","level":"info","ts":"2025-04-07T06:55:17Z"}
+{"level":"error","ts":"2025-04-07T06:55:17Z","msg":"Reconciler error","controller":"servicel2status","namespace":"default","name":"whoamisvc","reconcileID":"1f294b06-12eb-42a4-b6ef-f07a89a1dac1","error":"ServiceL2Status.metallb.io \"l2-p9x47\" is invalid: status.node: Invalid value: \"string\": Value is immutable","stacktrace":"sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).reconcileHandler\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:316\nsigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).processNextWorkItem\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:263\nsigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).Start.func2.2\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:224"}
+{"caller":"layer2_status_controller.go:68","controller":"Layer2StatusReconciler","level":"info","start reconcile":"default/metalsvc","ts":"2025-04-07T06:55:17Z"}
+{"caller":"layer2_status_controller.go:130","controller":"Layer2StatusReconciler","end reconcile":"default/metalsvc","level":"info","ts":"2025-04-07T06:55:17Z"}
+{"level":"error","ts":"2025-04-07T06:55:17Z","msg":"Reconciler error","controller":"servicel2status","namespace":"default","name":"metalsvc","reconcileID":"70f84745-c1ec-406b-adda-7dff80beb473","error":"ServiceL2Status.metallb.io \"l2-kqljt\" is invalid: status.node: Invalid value: \"string\": Value is immutable","stacktrace":"sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).reconcileHandler\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:316\nsigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).processNextWorkItem\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:263\nsigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).Start.func2.2\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:224"}
+{"caller":"layer2_status_controller.go:68","controller":"Layer2StatusReconciler","level":"info","start reconcile":"default/whoamisvc","ts":"2025-04-07T06:55:17Z"}
+{"caller":"layer2_status_controller.go:130","controller":"Layer2StatusReconciler","end reconcile":"default/whoamisvc","level":"info","ts":"2025-04-07T06:55:17Z"}
+{"caller":"layer2_status_controller.go:68","controller":"Layer2StatusReconciler","level":"info","start reconcile":"default/metalsvc","ts":"2025-04-07T06:55:17Z"}
+
+
+{"level":"error","ts":"2025-04-07T06:55:17Z","msg":"Reconciler error","controller":"servicel2status","namespace":"default","name":"whoamisvc","reconcileID":"b419a06f-ccac-4d15-8fed-eda24e559137","error":"ServiceL2Status.metallb.io \"l2-p9x47\" is invalid: status.node: Invalid value: \"string\": Value is immutable","stacktrace":"sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).reconcileHandler\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:316\nsigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).processNextWorkItem\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:263\nsigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).Start.func2.2\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:224"}
+{"caller":"layer2_status_controller.go:130","controller":"Layer2StatusReconciler","end reconcile":"default/metalsvc","level":"info","ts":"2025-04-07T06:55:17Z"}
+{"level":"error","ts":"2025-04-07T06:55:17Z","msg":"Reconciler error","controller":"servicel2status","namespace":"default","name":"metalsvc","reconcileID":"0adee63b-9256-495a-9cd2-6a3286840962","error":"ServiceL2Status.metallb.io \"l2-kqljt\" is invalid: status.node: Invalid value: \"string\": Value is immutable","stacktrace":"sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).reconcileHandler\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:316\nsigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).processNextWorkItem\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:263\nsigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).Start.func2.2\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:224"}
+{"caller":"layer2_status_controller.go:68","controller":"Layer2StatusReconciler","level":"info","start reconcile":"default/whoamisvc","ts":"2025-04-07T06:55:17Z"}
+{"caller":"layer2_status_controller.go:130","controller":"Layer2StatusReconciler","end reconcile":"default/whoamisvc","level":"info","ts":"2025-04-07T06:55:17Z"}
+{"level":"error","ts":"2025-04-07T06:55:17Z","msg":"Reconciler error","controller":"servicel2status","namespace":"default","name":"whoamisvc","reconcileID":"2692239b-d3c7-4e00-8fd9-5c57fe7a8238","error":"ServiceL2Status.metallb.io \"l2-p9x47\" is invalid: status.node: Invalid value: \"string\": Value is immutable","stacktrace":"sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).reconcileHandler\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:316\nsigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).processNextWorkItem\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:263\nsigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).Start.func2.2\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:224"}
+{"caller":"layer2_status_controller.go:68","controller":"Layer2StatusReconciler","level":"info","start reconcile":"default/metalsvc","ts":"2025-04-07T06:55:17Z"}
+{"level":"error","ts":"2025-04-07T06:55:17Z","msg":"Reconciler error","controller":"servicel2status","namespace":"default","name":"metalsvc","reconcileID":"4d5becc0-e319-4bcc-92a0-4b5807bf2c64","error":"ServiceL2Status.metallb.io \"l2-kqljt\" is invalid: status.node: Invalid value: \"string\": Value is immutable","stacktrace":"sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).reconcileHandler\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:316\nsigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).processNextWorkItem\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:263\nsigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller[...[]).Start.func2.2\n\t/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.19.3/pkg/internal/controller/controller.go:224"}
+
+
+
+
+
+
+2025-04-07T06:55:17Z
+2025-04-07T06:56:25Z
+
+
+
+Events:                                                                                                                                             │
+│   Type    Reason        Age                From             Message                                                                                 │
+│   ----    ------        ----               ----             -------                                                                                 │
+│   Normal  nodeAssigned  21m                metallb-speaker  announcing from node "lima-metallb2" with protocol "layer2"                             │
+│   Normal  nodeAssigned  46s (x3 over 20m)  metallb-speaker  announcing from node "lima-metallb3" with protocol "layer2"
+
+
+
+2025-04-07T16:15:42.657580575+09:00 {"caller":"speakerlist.go:313","level":"info","msg":"node event - forcing sync","node addr":"192.168.104.10","nodeevent":"NodeLeave","node name":"lima-metallb2","ts":"2025-04-07T07:15:42Z"}
+2025-04-07T16:15:42.662137184+09:00 {"caller":"service_controller_reload.go:63","controller":"ServiceReconciler - reprocessAll","level":"info","start reconcile":"metallbreload/reload","ts":"2025-04-07T07:15:42Z"}
+2025-04-07T16:15:42.673389216+09:00 {"caller":"main.go:420","event":"serviceAnnounced","ips":["192.168.104.200"],"level":"info","msg":"service has IP,announcing","pool":"vip-pool","protocol":"layer2","ts":"2025-04-07T07:15:42Z"}
+2025-04-07T16:15:42.673974166+09:00 {"caller":"layer2_status_controller.go:68","controller":"Layer2StatusReconciler","level":"info","start reconcile":"default/metalsvc","ts":"2025-04-07T07:15:42Z"}
+2025-04-07T16:15:42.676125981+09:00 {"caller":"main.go:420","event":"serviceAnnounced","ips":["192.168.104.201"],"level":"info","msg":"service has IP,announcing","pool":"vip-pool","protocol":"layer2","ts":"2025-04-07T07:15:42Z"}
+2025-04-07T16:15:42.677781839+09:00 {"caller":"service_controller_reload.go:119","controller":"ServiceReconciler - reprocessAll","end reconcile":"metallbreload/reload","level":"info","ts":"2025-04-07T07:15:42Z"}
+2025-04-07T16:15:42.677949824+09:00 {"caller":"layer2_status_controller.go:111","controller":"Layer2StatusReconciler","end reconcile":"default/metalsvc","level":"info","ts":"2025-04-07T07:15:42Z"}
+2025-04-07T16:15:42.678915741+09:00 {"caller":"layer2_status_controller.go:68","controller":"Layer2StatusReconciler","level":"info","start reconcile":"default/whoamisvc","ts":"2025-04-07T07:15:42Z"}
+2025-04-07T16:15:42.679035731+09:00 {"caller":"layer2_status_controller.go:111","controller":"Layer2StatusReconciler","end reconcile":"default/whoamisvc","level":"info","ts":"2025-04-07T07:15:42Z"}
+2025-04-07T16:16:35.409724867+09:00 {"caller":"speakerlist.go:259","error":"1 error occurred:\n\t* Failed to join 192.168.104.10:7946: dial tcp 192.168.104.10:7946: i/o timeout\n\n","expected":1,"joined":0,"level":"error","msg":"partial join","op":"memberDiscovery","ts":"2025-04-07T07:16:35Z"}
+2025-04-07T16:17:28.489716858+09:00 {"caller":"speakerlist.go:259","error":"1 error occurred:\n\t* Failed to join 192.168.104.10:7946: dial tcp 192.168.104.10:7946: connect: no route to host\n\n","expected":1,"joined":0,"level":"error","msg":"partial join","op":"memberDiscovery","ts":"2025-04-07T07:17:28Z"}
+2025-04-07T16:18:28.519426988+09:00 {"caller":"speakerlist.go:259","error":"1 error occurred:\n\t* Failed to join 192.168.104.10:7946: dial tcp 192.168.104.10:7946: connect: no route to host\n\n","expected":1,"joined":0,"level":"error","msg":"partial join","op":"memberDiscovery","ts":"2025-04-07T07:18:28Z"}
+2025-04-07T16:19:28.487356121+09:00 {"caller":"speakerlist.go:259","error":"1 error occurred:\n\t* Failed to join 192.168.104.10:7946: dial tcp 192.168.104.10:7946: connect: no route to host\n\n","expected":1,"joined":0,"level":"error","msg":"partial join","op":"memberDiscovery","ts":"2025-04-07T07:19:28Z"}
+
+
+
+
+# Apache Bench #1
+Server Software:        nginx/1.27.4
+Server Hostname:        192.168.104.200
+Server Port:            80
+
+Document Path:          /
+Document Length:        615 bytes
+
+Concurrency Level:      1
+Time taken for tests:   30.694 seconds
+Complete requests:      10000
+Failed requests:        0
+Total transferred:      8480000 bytes
+HTML transferred:       6150000 bytes
+Requests per second:    325.79 [#/sec] (mean)
+Time per request:       3.069 [ms] (mean)
+Time per request:       3.069 [ms] (mean, across all concurrent requests)
+Transfer rate:          269.80 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        1    1   0.3      1      10
+Processing:     1    2   0.6      2      12
+Waiting:        1    1   0.4      1      12
+Total:          2    3   0.7      3      17
+
+Percentage of the requests served within a certain time (ms)
+  50%      3
+  66%      3
+  75%      3
+  80%      3
+  90%      4
+  95%      4
+  98%      5
+  99%      6
+ 100%     17 (longest request)
+
+# Apache Bench #2
+Server Software:        nginx/1.27.4
+Server Hostname:        192.168.104.200
+Server Port:            80
+
+Document Path:          /
+Document Length:        615 bytes
+
+Concurrency Level:      1
+Time taken for tests:   30.130 seconds
+Complete requests:      10000
+Failed requests:        0
+Total transferred:      8480000 bytes
+HTML transferred:       6150000 bytes
+Requests per second:    331.90 [#/sec] (mean)
+Time per request:       3.013 [ms] (mean)
+Time per request:       3.013 [ms] (mean, across all concurrent requests)
+Transfer rate:          274.85 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        1    1   0.2      1       3
+Processing:     1    2   0.6      2      15
+Waiting:        1    1   0.5      1      15
+Total:          2    3   0.7      3      17
+
+Percentage of the requests served within a certain time (ms)
+  50%      3
+  66%      3
+  75%      3
+  80%      3
+  90%      4
+  95%      4
+  98%      5
+  99%      5
+ 100%     17 (longest request)
+
+# Apache Bench #3
+Server Software:        nginx/1.27.4
+Server Hostname:        192.168.104.200
+Server Port:            80
+
+Document Path:          /
+Document Length:        615 bytes
+
+Concurrency Level:      1
+Time taken for tests:   31.229 seconds
+Complete requests:      10000
+Failed requests:        0
+Total transferred:      8480000 bytes
+HTML transferred:       6150000 bytes
+Requests per second:    320.22 [#/sec] (mean)
+Time per request:       3.123 [ms] (mean)
+Time per request:       3.123 [ms] (mean, across all concurrent requests)
+Transfer rate:          265.18 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        1    1   0.5      1      47
+Processing:     1    2   1.0      2      69
+Waiting:        1    1   0.8      1      58
+Total:          2    3   1.5      3     116
+
+Percentage of the requests served within a certain time (ms)
+  50%      3
+  66%      3
+  75%      3
+  80%      3
+  90%      4
+  95%      4
+  98%      5
+  99%      6
+ 100%    116 (longest request)
+
+
+
+
+18:11:01:622634814 : curl -m 1 -s -o /dev/null -w '%{http_code}'..
+18:11:02:673946294 : curl -m 1 -s -o /dev/null -w '%{http_code}'..
+18:11:03:723858617 : curl -m 1 -s -o /dev/null -w '%{http_code}'..
+18:11:04:773591855 : curl -m 1 -s -o /dev/null -w '%{http_code}'..
+18:11:05:819432811 : curl -m 1 -s -o /dev/null -w '%{http_code}'..
+18:11:06:868906860 : curl -m 1 -s -o /dev/null -w '%{http_code}'..
+18:11:07:917901800 : curl -m 1 -s -o /dev/null -w '%{http_code}'..
+
+
+18:23:27:824642147 : curl -m 1 -s -o /dev/null -w '%{http_code}'..
+18:23:28:873692578 : curl -m 1 -s -o /dev/null -w '%{http_code}'..
+18:23:29:925954052 : curl -m 1 -s -o /dev/null -w '%{http_code}'..
+18:23:30:981480568 : curl -m 1 -s -o /dev/null -w '%{http_code}'..
+18:23:32:032829983 : curl -m 1 -s -o /dev/null -w '%{http_code}'..
+18:23:33:083713369 : curl -m 1 -s -o /dev/null -w '%{http_code}'..

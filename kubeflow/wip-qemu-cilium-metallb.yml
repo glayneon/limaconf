@@ -53,6 +53,9 @@ provision:
     sysctl --system
     # Installing kubeadm, kubelet and kubectl
     export DEBIAN_FRONTEND=noninteractive
+    # Change the apt source to the local mirror
+    sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirror.kakao.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
+    sed -i 's|http://security.ubuntu.com/ubuntu|http://mirror.kakao.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
     apt-get update
     apt-get install -y apt-transport-https ca-certificates curl
     VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt | sed -e 's/v//' | cut -d'.' -f1-2)
@@ -102,6 +105,7 @@ provision:
     kubeadm config images pull --cri-socket=unix:///run/containerd/containerd.sock
     systemctl start kubelet
     # Initializing your control-plane node
+    # Change IP address properly for serving Kubernetes API server
     cat <<EOF >kubeadm-config.yaml
     kind: InitConfiguration
     apiVersion: kubeadm.k8s.io/v1beta4
@@ -113,8 +117,15 @@ provision:
     apiServer:
       certSANs: # --apiserver-cert-extra-sans
       - "127.0.0.1"
+      extraArgs:
+      - name: "service-account-issuer"
+        value: "https://kubernetes.default.svc"
+      - name: "service-account-signing-key-file"
+        value: "/etc/kubernetes/pki/sa.key"
     networking:
+      dnsDomain: cluster.local
       podSubnet: "10.244.0.0/16" # --pod-network-cidr
+      serviceSubnet: 10.96.0.0/12
     ---
     kind: KubeletConfiguration
     apiVersion: kubelet.config.k8s.io/v1beta1
@@ -122,10 +133,14 @@ provision:
     EOF
     kubeadm init --config kubeadm-config.yaml
     # Installing a Pod network add-on, Calico
-    kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.3/manifests/tigera-operator.yaml
-    kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.3/manifests/custom-resources.yaml
+    kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.3/manifests/calico.yaml
     # Control plane node isolation
     kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+    # check calico controller
+    kubectl wait -n kube-system --timeout=180s --for=condition=available deploy calico-kube-controllers
+    # install MetalLB
+    # See <https://metallb.universe.tf/installation/>
+    kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
     # Replace the server address with localhost, so that it works also from the host
     sed -e "/server:/ s|https://.*:\([0-9]*\)$|https://127.0.0.1:\1|" -i $KUBECONFIG
     mkdir -p ${HOME:-/root}/.kube && cp -f $KUBECONFIG ${HOME:-/root}/.kube/config
@@ -137,6 +152,13 @@ provision:
     mkdir -p {{.Home}}/.kube
     cp -f $KUBECONFIG {{.Home}}/.kube/config
     chown -R {{.User}} {{.Home}}/.kube
+    cat <<EOF >> {{.Home}}/.bashrc
+    alias k="kubectl"
+    EOF
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
     # install k9s
     curl -sSL -O https://github.com/derailed/k9s/releases/download/v0.40.10/k9s_linux_amd64.deb && sudo dpkg -i ./k9s*.deb
 probes:
@@ -176,11 +198,21 @@ probes:
       echo >&2 "kubernetes cluster is not up and running yet"
       exit 1
     fi
+- description: "Calico deployment to be running"
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    kubectl wait -n kube-system --timeout=180s --for=condition=available deploy calico-kube-controllers
 - description: "coredns deployment to be running"
   script: |
     #!/bin/bash
     set -eux -o pipefail
     kubectl wait -n kube-system --timeout=180s --for=condition=available deploy coredns
+- description: "MetalLB deployment to be running"
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    kubectl wait -n metallb-system --timeout=180s --for=condition=available deploy controller
 copyToHost:
 - guest: "/etc/kubernetes/admin.conf"
   host: "{{.Dir}}/copied-from-guest/kubeconfig.yaml"
@@ -191,6 +223,17 @@ message: |
   export KUBECONFIG="{{.Dir}}/copied-from-guest/kubeconfig.yaml"
   kubectl ...
   ------
-cpus: 4
+# test-vm
+# cpus: 4
+# arch: x86_64
+# memory: 4GiB
+# disk: 30GiB
+# networks:
+#   - lima: shared
+# kubeflow
+cpus: 8
+memory: 16GiB
 arch: x86_64
-disk: 50GiB
+disk: 100GiB
+networks:
+  - lima: shared
