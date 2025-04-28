@@ -45,7 +45,8 @@ provision:
     sed -i 's|http://security.ubuntu.com/ubuntu|https://mirror.techlabs.co.kr/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
     apt-get update
     apt-get install -y apt-transport-https ca-certificates curl open-iscsi
-    VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt | sed -e 's/v//' | cut -d'.' -f1-2)
+    # VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt | sed -e 's/v//' | cut -d'.' -f1-2)
+    VERSION=1.32
     echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${VERSION}/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list
     curl -fsSL https://pkgs.k8s.io/core:/stable:/v${VERSION}/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
     apt-get update
@@ -112,8 +113,6 @@ provision:
         value: "https://kubernetes.default.svc"
       - name: "service-account-signing-key-file"
         value: "/etc/kubernetes/pki/sa.key"
-      - name: "advertise-address"
-        value: "${IPADDR}"
     networking:
       dnsDomain: cluster.local
       podSubnet: "10.244.0.0/16"
@@ -157,8 +156,6 @@ provision:
     # install ovn-k8s
     export KUBECONFIG=/etc/kubernetes/admin.conf
     git clone https://github.com/ovn-org/ovn-kubernetes.git
-    cd ovn-kubernetes/helm/ovn-kubernetes
-    git checkout v1.0.0
 probes:
 - description: "kubeadm to be installed"
   script: |
@@ -219,8 +216,6 @@ cpus: 6
 arch: x86_64
 memory: 8GiB
 disk: 50GiB
-networks:
-  - lima: shared
 # kubeflow
 # cpus: 10
 # memory: 18GiB
