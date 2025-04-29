@@ -102,13 +102,14 @@ provision:
     apiVersion: kubeadm.k8s.io/v1beta4
     nodeRegistration:
       criSocket: unix:///run/containerd/containerd.sock
+      node-ip: "${IPADDR}"
     localAPIEndpoint:
-      advertiseAddress: ${IPADDR}
-      bindPort:6443
+      advertiseAddress: "${IPADDR}"
+      bindPort: 6443
     ---
     kind: ClusterConfiguration
     apiVersion: kubeadm.k8s.io/v1beta4
-    controlPlaneEndpoint: "${IPADDR}"
+    controlPlaneEndpoint: "${IPADDR}:6443"
     apiServer:
       certSANs:
       - "127.0.0.1"
@@ -118,6 +119,14 @@ provision:
         value: "https://kubernetes.default.svc"
       - name: "service-account-signing-key-file"
         value: "/etc/kubernetes/pki/sa.key"
+      - name: bind-address
+        value: 0.0.0.0
+    controllerManager:
+      extraArgs:
+        bind-address: "0.0.0.0"
+    scheduler:
+      extraArgs:
+        bind-address: "0.0.0.0"
     networking:
       dnsDomain: cluster.local
       podSubnet: "10.244.0.0/16"
