@@ -102,9 +102,13 @@ provision:
     apiVersion: kubeadm.k8s.io/v1beta4
     nodeRegistration:
       criSocket: unix:///run/containerd/containerd.sock
+    localAPIEndpoint:
+      advertiseAddress: ${IPADDR}
+      bindPort:6443
     ---
     kind: ClusterConfiguration
     apiVersion: kubeadm.k8s.io/v1beta4
+    controlPlaneEndpoint: "${IPADDR}"
     apiServer:
       certSANs:
       - "127.0.0.1"
