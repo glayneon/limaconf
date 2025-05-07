@@ -1,18 +1,17 @@
 images:
 # Try to use release-yyyyMMdd image if available. Note that release-yyyyMMdd will be removed after several months.
-- location: "https://cloud-images.ubuntu.com/releases/24.04/release-20250115/ubuntu-24.04-server-cloudimg-amd64.img"
+- location: "https://cloud-images.ubuntu.com/releases/noble/release-20250313/ubuntu-24.04-server-cloudimg-amd64.img"
   arch: "x86_64"
-  digest: "sha256:28d2f9df3ac0d24440eaf6998507df3405142cf94a55e1f90802c78e43d2d9df"
-- location: "https://cloud-images.ubuntu.com/releases/24.04/release-20250115/ubuntu-24.04-server-cloudimg-arm64.img"
+  digest: "sha256:eacac65efe9e9bae0cbcb3f9d5c2b5e8c5313fa78a3bc401c3fb28b2d48cefc0"
+- location: "https://cloud-images.ubuntu.com/releases/noble/release-20250313/ubuntu-24.04-server-cloudimg-arm64.img"
   arch: "aarch64"
-  digest: "sha256:f11282a728ad42f8bfe0b646a6807674d79a019bfc229d80032345dd3228a2db"
+  digest: "sha256:103f31c5a5b7f031a60ce3555c8fbd56317fd8ffbaaa7e17002879e6157d546d"
 # Fallback to the latest release image.
 # Hint: run `limactl prune` to invalidate the cache
-- location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
+- location: "https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img"
   arch: "x86_64"
-- location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+- location: "https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-arm64.img"
   arch: "aarch64"
-
 # Mounts are disabled in this template, but can be enabled optionally.
 mounts: []
 containerd:
@@ -36,13 +35,19 @@ provision:
     net.bridge.bridge-nf-call-iptables  = 1
     net.ipv4.ip_forward                 = 1
     net.bridge.bridge-nf-call-ip6tables = 1
+    net.ipv6.disable                    = 0
+    fs.inotify.max_user_instances       = 2280
+    fs.inotify.max_user_watches         = 1255360
     EOF
     sysctl --system
     # Installing kubeadm, kubelet and kubectl
     export DEBIAN_FRONTEND=noninteractive
+    sed -i 's|http://archive.ubuntu.com/ubuntu|https://mirror.techlabs.co.kr/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
+    sed -i 's|http://security.ubuntu.com/ubuntu|https://mirror.techlabs.co.kr/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
     apt-get update
     apt-get install -y apt-transport-https ca-certificates curl
-    VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt | sed -e 's/v//' | cut -d'.' -f1-2)
+    # VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt | sed -e 's/v//' | cut -d'.' -f1-2)
+    VERSION=1.32
     echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${VERSION}/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list
     curl -fsSL https://pkgs.k8s.io/core:/stable:/v${VERSION}/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
     apt-get update
@@ -77,12 +82,14 @@ provision:
                   SystemdCgroup = true
     EOF
     systemctl restart containerd
+    systemctl restart containerd
 # See <https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/>
 - mode: system
   script: |
     #!/bin/bash
     set -eux -o pipefail
     test -e /etc/kubernetes/admin.conf && exit 0
+    IPADDR=$(ip -4 a show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
     export KUBECONFIG=/etc/kubernetes/admin.conf
     systemctl stop kubelet
     kubeadm config images list
@@ -94,29 +101,49 @@ provision:
     apiVersion: kubeadm.k8s.io/v1beta4
     nodeRegistration:
       criSocket: unix:///run/containerd/containerd.sock
+    localAPIEndpoint:
+      advertiseAddress: "${IPADDR}"
+      bindPort: 6443
     ---
     kind: ClusterConfiguration
     apiVersion: kubeadm.k8s.io/v1beta4
+    controlPlaneEndpoint: "${IPADDR}:6443"
     apiServer:
-      certSANs: # --apiserver-cert-extra-sans
+      certSANs:
       - "127.0.0.1"
+      - "${IPADDR}"
+      extraArgs:
+      - name: "service-account-issuer"
+        value: "https://kubernetes.default.svc"
+      - name: "service-account-signing-key-file"
+        value: "/etc/kubernetes/pki/sa.key"
+      - name: "bind-address"
+        value: "0.0.0.0"
+    controllerManager:
+      extraArgs:
+      - name: "bind-address"
+        value: "0.0.0.0"
+    scheduler:
+      extraArgs:
+      - name: "bind-address"
+        value: "0.0.0.0"
     networking:
-      podSubnet: "10.244.0.0/16" # --pod-network-cidr
+      dnsDomain: cluster.local
+      podSubnet: "10.244.0.0/16"
+      serviceSubnet: 10.96.0.0/16
     ---
     kind: KubeletConfiguration
     apiVersion: kubelet.config.k8s.io/v1beta1
     cgroupDriver: systemd
     EOF
     kubeadm init --config kubeadm-config.yaml
-    # Installing a Pod network add-on
-    # Add kube-ovn CNI
-    wget https://raw.githubusercontent.com/kubeovn/kube-ovn/release-1.13/dist/images/install.sh
     # Control plane node isolation
+    # Install kube-ovn
+    curl https://raw.githubusercontent.com/kubeovn/kube-ovn/refs/tags/v1.13.11/dist/images/install.sh | bash
     kubectl taint nodes --all node-role.kubernetes.io/control-plane-
     # Replace the server address with localhost, so that it works also from the host
     sed -e "/server:/ s|https://.*:\([0-9]*\)$|https://127.0.0.1:\1|" -i $KUBECONFIG
     mkdir -p ${HOME:-/root}/.kube && cp -f $KUBECONFIG ${HOME:-/root}/.kube/config
-    bash install.sh
 - mode: system
   script: |
     #!/bin/bash
@@ -125,8 +152,13 @@ provision:
     mkdir -p {{.Home}}/.kube
     cp -f $KUBECONFIG {{.Home}}/.kube/config
     chown -R {{.User}} {{.Home}}/.kube
-    # install k9s
+    # install k9s and kustomize
     curl -sSL -O https://github.com/derailed/k9s/releases/download/v0.40.10/k9s_linux_amd64.deb && sudo dpkg -i ./k9s*.deb
+    curl -sSL -O https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.6.0/kustomize_v5.6.0_linux_amd64.tar.gz && tar xvfz ./kustomize_*_amd64.tar.gz && sudo mv ./kustomize /usr/local/bin/kustomize
+    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    cat <<EOF >> {{.Home}}/.bashrc
+    alias k="kubectl"
+    EOF
 probes:
 - description: "kubeadm to be installed"
   script: |
@@ -179,6 +211,6 @@ message: |
   export KUBECONFIG="{{.Dir}}/copied-from-guest/kubeconfig.yaml"
   kubectl ...
   ------
-cpus: 4
-arch: x86_64
-disk: 50GiB
+cpus: 12
+memory: 16
+disk: 100GiB
