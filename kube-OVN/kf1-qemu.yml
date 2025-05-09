@@ -214,3 +214,4 @@ message: |
 cpus: 12
 memory: 16
 disk: 100GiB
+arch: x86_64
